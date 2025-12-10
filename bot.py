@@ -1,6 +1,4 @@
 import os
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from collections import Counter
 
 from telegram import (
@@ -20,25 +18,8 @@ TEMPLATES_URL = "https://vigbo.com/templates"
 CABINET_URL = "https://clients.vigbo.com/area/main.php"
 JULIA_URL = "https://t.me/julia_vigbo"
 
-# ---------------------- МАЛЕНЬКИЙ HTTP-СЕРВЕР ДЛЯ RENDER ----------------------
-
-class HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-type", "text/plain; charset=utf-8")
-        self.end_headers()
-        self.wfile.write(b"Bot is running")
-
-def start_health_server():
-    """
-    Небольшой HTTP-сервер, который слушает порт, чтобы Render видел открытый порт.
-    Работает в отдельном потоке и не мешает Telegram-боту.
-    """
-    port = int(os.environ.get("PORT", "10000"))
-    server = HTTPServer(("0.0.0.0", port), HealthHandler)
-    server.serve_forever()
-
 # ---------------------- ВОПРОСЫ ----------------------
+
 QUESTIONS = [
     {
         "title": "Вопрос 1 из 15",
@@ -190,7 +171,7 @@ QUESTIONS = [
             "1. «Это – искусство.»",
             "2. «С тобой так легко.»",
             "3. «Профессионально и безупречно.»",
-            "4. «Твои фото — как медитация.»",
+            "4. «Твои фото, как медитация.»",
             "5. «Эта серия – как фильм.»",
         ],
     },
@@ -214,8 +195,6 @@ TYPE_NAMES = {
     4: "Наблюдатель",
     5: "История",
 }
-
-# ---------------------- ТЕКСТЫ ТИПОВ (как мы делали) ----------------------
 
 TYPE_TEXTS = {
     1: (
@@ -336,16 +315,38 @@ def build_after_quiz_keyboard() -> InlineKeyboardMarkup:
 def build_final_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("Посмотреть шаблоны сайтов от Vigbo", url=TEMPLATES_URL)],
-            [InlineKeyboardButton("Перейти в личный кабинет Vigbo", url=CABINET_URL)],
-            [InlineKeyboardButton("Пройти тест ещё раз", callback_data="restart_quiz")],
+            [
+                InlineKeyboardButton(
+                    "Посмотреть шаблоны сайтов от Vigbo",
+                    url=TEMPLATES_URL,
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "Перейти в личный кабинет Vigbo",
+                    url=CABINET_URL,
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "Пройти тест ещё раз",
+                    callback_data="restart_quiz",
+                )
+            ],
         ]
     )
 
 
 def build_julia_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("Написать Юле в Telegram", url=JULIA_URL)]]
+        [
+            [
+                InlineKeyboardButton(
+                    "Написать Юле в Telegram",
+                    url=JULIA_URL,
+                )
+            ]
+        ]
     )
 
 
@@ -353,14 +354,23 @@ async def edit_question_message(message, q_index: int):
     q = QUESTIONS[q_index]
     keyboard = build_question_keyboard(q["options"])
     text = f"<b>{q['title']}</b>\n\n{q['question']}"
-    await message.edit_text(text=text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
+    await message.edit_text(
+        text=text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=keyboard,
+    )
 
 
 async def send_first_question(update: Update):
     q = QUESTIONS[0]
     keyboard = build_question_keyboard(q["options"])
     text = f"<b>{q['title']}</b>\n\n{q['question']}"
-    await update.message.reply_text(text=text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
+    await update.message.reply_text(
+        text=text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=keyboard,
+    )
+
 
 # ---------------------- ХЕНДЛЕРЫ ----------------------
 
@@ -381,6 +391,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     data = query.data
+
     if not data.startswith("ans_"):
         return
 
@@ -401,7 +412,6 @@ async def answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if q_index < len(QUESTIONS):
         await edit_question_message(query.message, q_index)
     else:
-        # считаем типы
         counts = Counter(answers)
         for t in range(1, 6):
             counts.setdefault(t, 0)
@@ -413,15 +423,20 @@ async def answer_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Ура! 🎉 Ты прошёл(а) тест, и мы смогли определить твой тип фотографа.\n\n"
             "Нажми кнопку ниже, чтобы узнать свой результат."
         )
-        await query.message.edit_text(text=text, reply_markup=build_after_quiz_keyboard())
+
+        await query.message.edit_text(
+            text=text,
+            reply_markup=build_after_quiz_keyboard(),
+        )
 
 
 async def show_type_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    chat = query.message.chat
 
     dominant = context.user_data.get("dominant_types") or []
+    chat = query.message.chat
+
     if not dominant:
         await chat.send_message(
             "Похоже, данные теста не найдены. Попробуй пройти его ещё раз с команды /start."
@@ -430,7 +445,10 @@ async def show_type_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if len(dominant) == 1:
         t = dominant[0]
-        await chat.send_message(TYPE_TEXTS[t], parse_mode=ParseMode.HTML)
+        await chat.send_message(
+            text=TYPE_TEXTS[t],
+            parse_mode=ParseMode.HTML,
+        )
     else:
         names = ", ".join(TYPE_NAMES[t] for t in dominant)
         intro = (
@@ -440,16 +458,23 @@ async def show_type_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Как раз сочетание этих типов и создаёт твою уникальность."
         )
         await chat.send_message(intro, parse_mode=ParseMode.HTML)
+
         for t in dominant:
-            await chat.send_message(TYPE_TEXTS[t], parse_mode=ParseMode.HTML)
+            await chat.send_message(
+                text=TYPE_TEXTS[t],
+                parse_mode=ParseMode.HTML,
+            )
 
     final_text = (
         "Теперь ты лучше понимаешь свой взгляд на съёмку. "
         "Дальше можно перейти к выбору шаблона и созданию сайта, "
         "который поддержит твой уникальный стиль."
     )
+
     await chat.send_message(
-        final_text, parse_mode=ParseMode.HTML, reply_markup=build_final_keyboard()
+        text=final_text,
+        reply_markup=build_final_keyboard(),
+        parse_mode=ParseMode.HTML,
     )
 
     julia_text = (
@@ -457,18 +482,24 @@ async def show_type_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "или просто попросить совет – напиши менеджеру Vigbo Юле. "
         "Она рядом и всегда постарается помочь."
     )
+
     await chat.send_message(
-        julia_text, parse_mode=ParseMode.HTML, reply_markup=build_julia_keyboard()
+        text=julia_text,
+        reply_markup=build_julia_keyboard(),
+        parse_mode=ParseMode.HTML,
     )
 
 
 async def restart_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+
     context.user_data["answers"] = []
     context.user_data["q_index"] = 0
     context.user_data["dominant_types"] = None
+
     await edit_question_message(query.message, 0)
+
 
 # ---------------------- ЗАПУСК ----------------------
 
@@ -477,16 +508,15 @@ def main():
     if not token:
         raise RuntimeError("Не найден токен. Установи переменную BOT_TOKEN.")
 
-    # запускаем health-сервер в отдельном потоке, чтобы Render видел открытый порт
-    threading.Thread(target=start_health_server, daemon=True).start()
-
     app = ApplicationBuilder().token(token).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(restart_handler, pattern="^restart_quiz$"))
     app.add_handler(CallbackQueryHandler(show_type_handler, pattern="^show_type$"))
     app.add_handler(CallbackQueryHandler(answer_handler, pattern="^ans_"))
 
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()
