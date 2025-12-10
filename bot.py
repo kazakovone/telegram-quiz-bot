@@ -290,9 +290,15 @@ TYPE_TEXTS = {
 # ---------- Вспомогательные функции ----------
 
 def build_question_keyboard(options: list[str]) -> InlineKeyboardMarkup:
+    # На кнопках только цифры, чтобы текст не обрезался
     buttons = [
-        [InlineKeyboardButton(text=f"{i + 1}. {opt}", callback_data=f"ans_{i + 1}")]
-        for i, opt in enumerate(options)
+        [
+            InlineKeyboardButton(
+                text=str(i + 1),
+                callback_data=f"ans_{i + 1}",
+            )
+        ]
+        for i in range(len(options))
     ]
     return InlineKeyboardMarkup(buttons)
 
@@ -331,7 +337,15 @@ async def send_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         return
 
     q = QUESTIONS[q_index]
-    text = f"<b>{q['title']}</b>\n\n{q['question']}"
+
+    # полный текст вариантов в самом сообщении
+    options_lines = [f"{i + 1}. {opt}" for i, opt in enumerate(q["options"])]
+    text = (
+        f"<b>{q['title']}</b>\n\n"
+        f"{q['question']}\n\n" +
+        "\n".join(options_lines)
+    )
+
     keyboard = build_question_keyboard(q["options"])
 
     if update.callback_query:
@@ -410,14 +424,12 @@ async def show_results(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     counts = Counter(answers)
-    # Гарантируем, что считаем по всем типам 1–5
     for t in range(1, 6):
         counts.setdefault(t, 0)
 
     max_count = max(counts.values())
     dominant = [t for t, c in counts.items() if c == max_count]
 
-    # Сообщение о типах
     if len(dominant) == 1:
         intro = "Готово! Вот твой ведущий тип фотографа:\n"
     else:
@@ -439,7 +451,6 @@ async def show_results(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         intro, parse_mode=ParseMode.HTML
     )
 
-    # Отправляем описание каждого доминирующего типа отдельным сообщением
     for t in dominant:
         text = TYPE_TEXTS.get(t)
         if text:
@@ -448,7 +459,6 @@ async def show_results(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 parse_mode=ParseMode.HTML,
             )
 
-    # Общий финал
     final_text = (
         "Каждый фотограф — это сочетание нескольких граней.\n"
         "Когда ты понимаешь, кто ты как фотограф, проще создать свою цельную вселенную, "
